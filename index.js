@@ -17,81 +17,70 @@ class S3Deploy {
     
     this.serverless.cli.log("Existing S3 is running")
     this.hooks = {
-      'before:deploy:deploy':this.beforeFunctions.bind(this),
       'after:deploy:deploy': this.functions.bind(this),
     };
-  }
-
-  /*
-   * Looks at the serverless.yml file for the project the plugin is defined within and 
-   *  builds the AWS payload needed for each S3 bucket configured for externalS3 events.
-   */
-  beforeFunctions(){
-
-    this.serverless.cli.log("beforeFunctions --> building ... ");
-
-    this.events = this.transformer.functionsToEvents(this.serverless.service.functions);
-
-    this.serverless.cli.log(`beforeFunctions <-- Complete, built ${this.events.length} events.`);
   }
 
   functions(){
     this.serverless.cli.log("functions --> prepare to be executed by s3 buckets ... ");
 
-    let count = 0;
+    this.events = this.transformer.functionsToEvents(this.serverless.service.functions)
+    this.events.then(_ => {
+      let count = 0;
 
-    return Promise.all( this.events )
-      .then( results => results.map( result => {
+      return Promise.all( this.events )
+        .then( results => results.map( result => {
 
-          const event = result.passthrough;
+            const event = result.passthrough;
 
-          /*
-           * If we get a 'funciton not found' error message then sls deploy has likely not been
-           *  executed. I suppose it could also be 'permissions', but that would require someone
-           *  create a wonkey AIM definition in serverless.yml.
-           */
-          if(result.error && result.error.toLowerCase().startsWith('function not found')){
-            if(this.options['continue-on-error']) {
-              this.serverless.cli.log(`\t ERROR: It looks like the function ${event.name} has not yet beend deployed, it will be excluded.`);
-              event.remove = true;
-              return Promise.resolve(event);
-            } else {
-              throw `It looks like the function ${event.name} has not yet beend deployed (it may not be the only one). You must use 'sls deploy' before doing 'sls s3deploy'.`;
+            /*
+            * If we get a 'funciton not found' error message then sls deploy has likely not been
+            *  executed. I suppose it could also be 'permissions', but that would require someone
+            *  create a wonkey AIM definition in serverless.yml.
+            */
+            if(result.error && result.error.toLowerCase().startsWith('function not found')){
+              if(this.options['continue-on-error']) {
+                this.serverless.cli.log(`\t ERROR: It looks like the function ${event.name} has not yet beend deployed, it will be excluded.`);
+                event.remove = true;
+                return Promise.resolve(event);
+              } else {
+                throw `It looks like the function ${event.name} has not yet beend deployed (it may not be the only one). You must use 'sls deploy' before doing 'sls s3deploy'.`;
+              }
             }
-          }
 
-          /*
-           * No permissions have been added to this function for any S3 bucket, so create the policy
-           *  and return the event when it executes successfully.
-           */
-          if(result.error && 'the resource you requested does not exist.' === result.error.toLowerCase()){
-            return this.lambdaPermissions.createPolicy(event.name,event.existingS3.bucket,event);
-          }
+            /*
+            * No permissions have been added to this function for any S3 bucket, so create the policy
+            *  and return the event when it executes successfully.
+            */
+            if(result.error && 'the resource you requested does not exist.' === result.error.toLowerCase()){
+              return this.lambdaPermissions.createPolicy(event.name,event.existingS3.bucket,event);
+            }
 
-          /*
-           * If there is no policy on the lambda function allowing the S3 bucket to invoke it
-           *  then add it. These policies are named specifically for this lambda function so
-           *  existing 'should' be sufficient in ensureing its proper.
-           */
-          if(!result.statement) {
-            return this.lambdaPermissions.createPolicy(event.name,event.existingS3.bucket,event);
-          }
+            /*
+            * If there is no policy on the lambda function allowing the S3 bucket to invoke it
+            *  then add it. These policies are named specifically for this lambda function so
+            *  existing 'should' be sufficient in ensureing its proper.
+            */
+            if(!result.statement) {
+              return this.lambdaPermissions.createPolicy(event.name,event.existingS3.bucket,event);
+            }
 
-          return Promise.resolve(result);
+            return Promise.resolve(result);
+          })
+        )
+        .then( results => Promise.all(results) )
+
+        /*
+        * Transform results
+        */
+        .then( events => this.transformer.eventsToBucketGroups(events) )
+        .then( bucketNotifications => {
+          this.bucketNotifications = bucketNotifications;
+          this.serverless.cli.log(`functions <-- built ${count} events across ${bucketNotifications.length} buckets. `);
         })
-      )
-      .then( results => Promise.all(results) )
-
-      /*
-       * Transform results
-       */
-      .then( events => this.transformer.eventsToBucketGroups(events) )
-      .then( bucketNotifications => {
-        this.bucketNotifications = bucketNotifications;
-        this.serverless.cli.log(`functions <-- built ${count} events across ${bucketNotifications.length} buckets. `);
-      })
-      .then(this.beforeS3.bind(this))
-      .then(this.s3.bind(this))
+        .then(this.beforeS3.bind(this))
+        .then(this.s3.bind(this))
+      });
   }
 
   beforeS3(){
