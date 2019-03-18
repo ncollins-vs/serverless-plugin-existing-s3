@@ -14,36 +14,12 @@ class S3Deploy {
     this.s3Facade          = new S3(this.serverless,this.options,this.provider);
     this.lambdaPermissions = new Permissions.Lambda(this.provider);
     this.transformer       = new Transformer(this.lambdaPermissions);
-    this.commands          = {
-      s3deploy: {
-        lifecycleEvents: [
-          'init',
-          'functions',
-          's3'
-        ],
-        usage: 'Add lambda notifications to S3 buckets not defined in serverless.yml',
-        options: {
-          'continue-on-error' : {
-            usage: 'Can be used to attempt a partial deploy, where not all functions are available/deployed. They will be skipped and not attmepted.'
-          },
-          help: {
-            usage: 'See https://github.com/matt-filion/serverless-external-s3-event for detailed documentation.'
-          }
-        }
-      },
-    };
-
+    
+    this.serverless.cli.log("Existing S3 is running")
     this.hooks = {
-      'before:s3deploy:functions':this.beforeFunctions.bind(this),
-      's3deploy:functions': this.functions.bind(this),
-
-      'before:s3deploy:s3':this.beforeS3.bind(this),
-      's3deploy:s3': this.s3.bind(this)
+      'before:deploy:deploy':this.beforeFunctions.bind(this),
+      'after:deploy:deploy': this.functions.bind(this),
     };
-
-    this.bucketNotifications;
-    this.currentBucketNotifications;
-
   }
 
   /*
@@ -114,6 +90,8 @@ class S3Deploy {
         this.bucketNotifications = bucketNotifications;
         this.serverless.cli.log(`functions <-- built ${count} events across ${bucketNotifications.length} buckets. `);
       })
+      .then(this.beforeS3.bind(this))
+      .then(this.s3.bind(this))
   }
 
   beforeS3(){
