@@ -25,62 +25,62 @@ class S3Deploy {
     this.serverless.cli.log("functions --> prepare to be executed by s3 buckets ... ");
 
     this.events = this.transformer.functionsToEvents(this.serverless.service.functions)
-    this.events.then(_ => {
-      let count = 0;
+    this.events;
 
-      return Promise.all( this.events )
-        .then( results => results.map( result => {
+    let count = 0;
 
-            const event = result.passthrough;
+    return Promise.all( this.events )
+      .then( results => results.map( result => {
 
-            /*
-            * If we get a 'funciton not found' error message then sls deploy has likely not been
-            *  executed. I suppose it could also be 'permissions', but that would require someone
-            *  create a wonkey AIM definition in serverless.yml.
-            */
-            if(result.error && result.error.toLowerCase().startsWith('function not found')){
-              if(this.options['continue-on-error']) {
-                this.serverless.cli.log(`\t ERROR: It looks like the function ${event.name} has not yet beend deployed, it will be excluded.`);
-                event.remove = true;
-                return Promise.resolve(event);
-              } else {
-                throw `It looks like the function ${event.name} has not yet beend deployed (it may not be the only one). You must use 'sls deploy' before doing 'sls s3deploy'.`;
-              }
+          const event = result.passthrough;
+
+          /*
+          * If we get a 'funciton not found' error message then sls deploy has likely not been
+          *  executed. I suppose it could also be 'permissions', but that would require someone
+          *  create a wonkey AIM definition in serverless.yml.
+          */
+          if(result.error && result.error.toLowerCase().startsWith('function not found')){
+            if(this.options['continue-on-error']) {
+              this.serverless.cli.log(`\t ERROR: It looks like the function ${event.name} has not yet beend deployed, it will be excluded.`);
+              event.remove = true;
+              return Promise.resolve(event);
+            } else {
+              throw `It looks like the function ${event.name} has not yet beend deployed (it may not be the only one). You must use 'sls deploy' before doing 'sls s3deploy'.`;
             }
+          }
 
-            /*
-            * No permissions have been added to this function for any S3 bucket, so create the policy
-            *  and return the event when it executes successfully.
-            */
-            if(result.error && 'the resource you requested does not exist.' === result.error.toLowerCase()){
-              return this.lambdaPermissions.createPolicy(event.name,event.existingS3.bucket,event);
-            }
+          /*
+          * No permissions have been added to this function for any S3 bucket, so create the policy
+          *  and return the event when it executes successfully.
+          */
+          if(result.error && 'the resource you requested does not exist.' === result.error.toLowerCase()){
+            return this.lambdaPermissions.createPolicy(event.name,event.existingS3.bucket,event);
+          }
 
-            /*
-            * If there is no policy on the lambda function allowing the S3 bucket to invoke it
-            *  then add it. These policies are named specifically for this lambda function so
-            *  existing 'should' be sufficient in ensureing its proper.
-            */
-            if(!result.statement) {
-              return this.lambdaPermissions.createPolicy(event.name,event.existingS3.bucket,event);
-            }
+          /*
+          * If there is no policy on the lambda function allowing the S3 bucket to invoke it
+          *  then add it. These policies are named specifically for this lambda function so
+          *  existing 'should' be sufficient in ensureing its proper.
+          */
+          if(!result.statement) {
+            return this.lambdaPermissions.createPolicy(event.name,event.existingS3.bucket,event);
+          }
 
-            return Promise.resolve(result);
-          })
-        )
-        .then( results => Promise.all(results) )
-
-        /*
-        * Transform results
-        */
-        .then( events => this.transformer.eventsToBucketGroups(events) )
-        .then( bucketNotifications => {
-          this.bucketNotifications = bucketNotifications;
-          this.serverless.cli.log(`functions <-- built ${count} events across ${bucketNotifications.length} buckets. `);
+          return Promise.resolve(result);
         })
-        .then(this.beforeS3.bind(this))
-        .then(this.s3.bind(this))
-      });
+      )
+      .then( results => Promise.all(results) )
+
+      /*
+      * Transform results
+      */
+      .then( events => this.transformer.eventsToBucketGroups(events) )
+      .then( bucketNotifications => {
+        this.bucketNotifications = bucketNotifications;
+        this.serverless.cli.log(`functions <-- built ${count} events across ${bucketNotifications.length} buckets. `);
+      })
+      .then(this.beforeS3.bind(this))
+      .then(this.s3.bind(this))
   }
 
   beforeS3(){
