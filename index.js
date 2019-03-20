@@ -14,18 +14,21 @@ class S3Deploy {
     this.s3Facade          = new S3(this.serverless,this.options,this.provider);
     this.lambdaPermissions = new Permissions.Lambda(this.provider);
     this.transformer       = new Transformer(this.lambdaPermissions);
-    
+
     this.serverless.cli.log("Existing S3 is running")
     this.hooks = {
-      'after:deploy:deploy': this.functions.bind(this),
+      'after:deploy:finalize': this.functions.bind(this),
     };
   }
 
-  functions(){
+  functions() {
+      return new Promise((res, rej) => setTimeout((_ => {this.functions2().then(res).catch(rej)}).bind(this), 1000))
+  }
+
+  functions2(){
     this.serverless.cli.log("functions --> prepare to be executed by s3 buckets ... ");
 
-    this.events = this.transformer.functionsToEvents(this.serverless.service.functions)
-    this.events;
+    this.events = this.transformer.functionsToEvents(this.serverless.service.functions);
 
     let count = 0;
 
@@ -41,11 +44,11 @@ class S3Deploy {
           */
           if(result.error && result.error.toLowerCase().startsWith('function not found')){
             if(this.options['continue-on-error']) {
-              this.serverless.cli.log(`\t ERROR: It looks like the function ${event.name} has not yet beend deployed, it will be excluded.`);
+              this.serverless.cli.log(`\t ERROR: It looks like the function ${event.name} has not yet been deployed, it will be excluded.`);
               event.remove = true;
               return Promise.resolve(event);
             } else {
-              throw `It looks like the function ${event.name} has not yet beend deployed (it may not be the only one). You must use 'sls deploy' before doing 'sls s3deploy'.`;
+              throw `It looks like the function ${event.name} has not yet been deployed (it may not be the only one). You must use 'sls deploy' before doing 'sls s3deploy'.`;
             }
           }
 
